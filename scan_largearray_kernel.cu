@@ -16,12 +16,12 @@ int blocksL1, blocksL2, blocksL3;
 
 // Host Helper Functions (allocate your own data structure...)
 void preallocBlockSums(int numElements){
-    blocksL1 = (int)ceil(numElements/(float)TILE_SIZE);
-    cudaMalloc((void**) &sumArray, sizeof(unsigned int)*blocksL1);
+    blocksL1 = (int)ceil(numElements / (float)TILE_SIZE);
+    cudaMalloc((void**) &sumArray, sizeof(unsigned int) * blocksL1);
     blocksL2 = (int)ceil(blocksL1/(float)TILE_SIZE);
-    cudaMalloc((void**) &sumArray2, sizeof(unsigned int)*blocksL2);
-    blocksL3 = (int)ceil(blocksL2/(float)TILE_SIZE);
-    cudaMalloc((void**) &sumArray3, sizeof(unsigned int)*blocksL3);
+    cudaMalloc((void**) &sumArray2, sizeof(unsigned int) * blocksL2);
+    blocksL3 = (int)ceil(blocksL2 / (float)TILE_SIZE);
+    cudaMalloc((void**) &sumArray3, sizeof(unsigned int) * blocksL3);
 }
 
 void deallocBlockSums(){
@@ -32,47 +32,49 @@ void deallocBlockSums(){
 
 // Device Functions
 
-
-
 // Kernel Functions
-
-__global__ void scanArray(unsigned int *outArray, unsigned int *inArray, unsigned int *sumArray, int numElements){
+__global__ void scanArray(unsigned int *outArray,
+                          unsigned int *inArray,
+                          unsigned int *sumArray,
+                          int numElements){
     __shared__ unsigned int tileArray[TILE_SIZE];
-    int index = blockIdx.x*TILE_SIZE + threadIdx.x;
-    if(index < numElements && (threadIdx.x!=0 || blockIdx.x!=0))
-        tileArray[threadIdx.x] = inArray[index-1];
+    int index = blockIdx.x * TILE_SIZE + threadIdx.x;
+    if(index < numElements && (threadIdx.x != 0 || blockIdx.x != 0))
+        tileArray[threadIdx.x] = inArray[index - 1];
     else
         tileArray[threadIdx.x] = 0;
     if(index+BLOCK_SIZE < numElements)
-        tileArray[threadIdx.x + BLOCK_SIZE] = inArray[index-1 + BLOCK_SIZE];
+        tileArray[threadIdx.x + BLOCK_SIZE] = inArray[index - 1 + BLOCK_SIZE];
     else
         tileArray[threadIdx.x + BLOCK_SIZE] = 0;
     unsigned int id, stride;
-    for(stride=1;stride<TILE_SIZE;stride *= 2){
+    for(stride = 1; stride < TILE_SIZE; stride *= 2){
         __syncthreads();
-        id = (threadIdx.x+1) * 2 * stride - 1;
+        id = (threadIdx.x + 1) * 2 * stride - 1;
         if(id<TILE_SIZE)
-            tileArray[id] += tileArray[id-stride];
+            tileArray[id] += tileArray[id - stride];
     }
 
-    for(stride=TILE_SIZE/4;stride>0;stride /= 2){
+    for(stride = TILE_SIZE / 4; stride > 0; stride /= 2){
         __syncthreads();
-        id = (threadIdx.x+1) * 2 * stride - 1;
+        id = (threadIdx.x + 1) * 2 * stride - 1;
         if(id + stride < TILE_SIZE)
-            tileArray[id+stride] += tileArray[id];
+            tileArray[id + stride] += tileArray[id];
     }
     
     __syncthreads();
-    if(threadIdx.x==0)
-        sumArray[blockIdx.x] = tileArray[TILE_SIZE-1];
+    if(threadIdx.x == 0)
+        sumArray[blockIdx.x] = tileArray[TILE_SIZE - 1];
     if(index < numElements)
         outArray[index] = tileArray[threadIdx.x];
     if(index + BLOCK_SIZE < numElements)
-        outArray[index+BLOCK_SIZE] = tileArray[threadIdx.x+BLOCK_SIZE]; 
+        outArray[index + BLOCK_SIZE] = tileArray[threadIdx.x + BLOCK_SIZE]; 
 }
 
-__global__ void vectorAddition(unsigned int *vector, unsigned int *sumVector, int numElements){
-    int index = blockIdx.x*TILE_SIZE + threadIdx.x;
+__global__ void vectorAddition(unsigned int *vector,
+                               unsigned int *sumVector,
+                               int numElements){
+    int index = blockIdx.x * TILE_SIZE + threadIdx.x;
     if(index < numElements){
         vector[index] += sumVector[blockIdx.x];
     }
